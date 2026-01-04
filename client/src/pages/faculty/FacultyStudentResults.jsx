@@ -1,16 +1,32 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../../services/api";
 import {
   Paper, Typography, TextField, Button, Alert, Stack,
   Table, TableHead, TableRow, TableCell, TableBody, Chip
 } from "@mui/material";
 
-export default function FacultyStudentResults() {
-  const [courseCode, setCourseCode] = useState("CMC111");
-  const [batchYear, setBatchYear] = useState(2026);
-  const [semesterNo, setSemesterNo] = useState(1);
+export default function FacultyStudentResults({
+  courseCode: initialCourseCode = "CMC111",
+  batchYear: initialBatchYear = 2026,
+  semesterNo: initialSemesterNo = 1
+}) {
+  const [courseCode, setCourseCode] = useState(initialCourseCode);
+  const [batchYear, setBatchYear] = useState(initialBatchYear);
+  const [semesterNo, setSemesterNo] = useState(initialSemesterNo);
   const [results, setResults] = useState([]);
   const [err, setErr] = useState("");
+
+  useEffect(() => {
+    setCourseCode(initialCourseCode || "");
+  }, [initialCourseCode]);
+
+  useEffect(() => {
+    if (Number.isFinite(initialBatchYear)) setBatchYear(initialBatchYear || 0);
+  }, [initialBatchYear]);
+
+  useEffect(() => {
+    if (Number.isFinite(initialSemesterNo)) setSemesterNo(initialSemesterNo || 0);
+  }, [initialSemesterNo]);
 
   const load = async () => {
     setErr("");
@@ -30,7 +46,13 @@ export default function FacultyStudentResults() {
       <Stack direction={{ xs:"column", sm:"row" }} spacing={2} sx={{ mb: 2 }}>
         <TextField label="Course Code" value={courseCode} onChange={(e)=>setCourseCode(e.target.value)} />
         <TextField label="Batch Year" type="number" value={batchYear} onChange={(e)=>setBatchYear(e.target.value)} />
-        <TextField label="Semester No" type="number" value={semesterNo} onChange={(e)=>setSemesterNo(e.target.value)} />
+        <TextField
+          label="Semester No"
+          type="number"
+          value={semesterNo}
+          onChange={(e)=>setSemesterNo(e.target.value)}
+          inputProps={{ min: 1 }}
+        />
         <Button variant="contained" onClick={load}>Load</Button>
       </Stack>
 

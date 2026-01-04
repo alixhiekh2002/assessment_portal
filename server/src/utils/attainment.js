@@ -2,23 +2,20 @@ import { query } from "../db.js";
 
 /**
  * Recompute CLO attainment for a given course offering (batch+semester) for a student.
- * Uses item_marks + item_clo_map + assessment_items (max_marks).
+ * Uses clo_marks + assessment_plan_rows (max_marks).
  */
 export async function recomputeCLOAttainment({ studentUserId, courseCode, batchId, semesterNo }) {
-  // For each CLO in this course, compute sum(obtained*weight)/sum(max*weight) *100
+  // For each CLO in this course, compute sum(obtained)/sum(max) *100
   const sql = `
     WITH mapped AS (
       SELECT
-        icm.clo_id,
-        im.obtained,
-        ai.max_marks,
-        icm.weight
-      FROM item_marks im
-      JOIN assessment_items ai ON ai.id = im.item_id
-      JOIN assessment_components ac ON ac.id = ai.component_id
-      JOIN assessment_plans ap ON ap.id = ac.plan_id
-      JOIN item_clo_map icm ON icm.item_id = ai.id
-      WHERE im.student_user_id = $1
+        apr.clo_id,
+        cm.obtained,
+        apr.max_marks
+      FROM clo_marks cm
+      JOIN assessment_plan_rows apr ON apr.id = cm.plan_row_id
+      JOIN assessment_plans ap ON ap.id = apr.plan_id
+      WHERE cm.student_user_id = $1
         AND ap.course_code = $2
         AND ap.batch_id = $3
         AND ap.semester_no = $4
@@ -26,8 +23,8 @@ export async function recomputeCLOAttainment({ studentUserId, courseCode, batchI
     agg AS (
       SELECT
         clo_id,
-        SUM(obtained * weight) AS num,
-        SUM(max_marks * weight) AS den
+        SUM(obtained) AS num,
+        SUM(max_marks) AS den
       FROM mapped
       GROUP BY clo_id
     )

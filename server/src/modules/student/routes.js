@@ -19,6 +19,41 @@ router.get("/courses", async (req,res,next)=> {
   } catch(e){ next(e); }
 });
 
+router.get("/results/semesters", async (req,res,next)=> {
+  try{
+    const { rows } = await query(`
+      SELECT DISTINCT semester_no
+      FROM enrollments
+      WHERE student_user_id=$1
+      ORDER BY semester_no
+    `, [req.user.userId]);
+    res.json({ semesters: rows.map(r => r.semester_no) });
+  } catch(e){ next(e); }
+});
+
+router.get("/results/semester", async (req,res,next)=> {
+  try{
+    const semesterNo = Number(req.query.semesterNo);
+    if(!semesterNo || semesterNo < 1) return res.status(400).json({ message:"semesterNo required" });
+
+    const { rows } = await query(`
+      SELECT e.course_code, c.title,
+             cg.percentage, cg.letter_grade, cg.grade_points
+      FROM enrollments e
+      JOIN courses c ON c.code = e.course_code
+      LEFT JOIN course_grades cg
+        ON cg.student_user_id = e.student_user_id
+       AND cg.course_code = e.course_code
+       AND cg.batch_id = e.batch_id
+       AND cg.semester_no = e.semester_no
+      WHERE e.student_user_id=$1 AND e.semester_no=$2
+      ORDER BY e.course_code
+    `, [req.user.userId, semesterNo]);
+
+    res.json({ results: rows });
+  } catch(e){ next(e); }
+});
+
 router.get("/results", async (req,res,next)=> {
   try{
     const courseCode = String(req.query.courseCode || "");

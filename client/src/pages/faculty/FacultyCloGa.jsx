@@ -1,11 +1,11 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "../../services/api";
 import { Paper, Typography, TextField, Button, Alert, Stack, MenuItem } from "@mui/material";
 
 const GA = ["GA1","GA2","GA3","GA4","GA5","GA6","GA7","GA8","GA9","GA10"];
 
-export default function FacultyCloGa() {
-  const [courseCode, setCourseCode] = useState("CMC111");
+export default function FacultyCloGa({ courseCode: initialCourseCode = "CMC111" }) {
+  const [courseCode, setCourseCode] = useState(initialCourseCode);
   const [cloNo, setCloNo] = useState(1);
   const [cloTitle, setCloTitle] = useState("CLO1: Understand basics");
   const [cloId, setCloId] = useState("");
@@ -14,8 +14,16 @@ export default function FacultyCloGa() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
+  useEffect(() => {
+    setCourseCode(initialCourseCode || "");
+  }, [initialCourseCode]);
+
   const addClo = async () => {
     setMsg(""); setErr("");
+    if (Number(cloNo) < 1) {
+      setErr("CLO No must be 1 or higher.");
+      return;
+    }
     try {
       const { data } = await api.post(`/faculty/courses/${courseCode}/clos`, { clo_no: Number(cloNo), title: cloTitle });
       setCloId(String(data.clo.id));
@@ -45,7 +53,13 @@ export default function FacultyCloGa() {
       <Stack spacing={2} sx={{ maxWidth: 600 }}>
         <Typography variant="subtitle1">1) Add / Update CLO</Typography>
         <TextField label="Course Code" value={courseCode} onChange={(e)=>setCourseCode(e.target.value)} />
-        <TextField label="CLO No" type="number" value={cloNo} onChange={(e)=>setCloNo(e.target.value)} />
+        <TextField
+          label="CLO No"
+          type="number"
+          value={cloNo}
+          onChange={(e)=>setCloNo(e.target.value)}
+          inputProps={{ min: 1 }}
+        />
         <TextField label="CLO Title" value={cloTitle} onChange={(e)=>setCloTitle(e.target.value)} />
         <Button variant="contained" onClick={addClo}>Save CLO</Button>
 

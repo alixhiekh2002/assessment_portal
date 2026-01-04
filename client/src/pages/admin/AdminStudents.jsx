@@ -1,10 +1,16 @@
 import React, { useState } from "react";
 import { api } from "../../services/api";
-import { Paper, Typography, Button, Alert } from "@mui/material";
+import { Paper, Typography, Button, Alert, TextField, Stack } from "@mui/material";
 
 export default function AdminStudents() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [studentId, setStudentId] = useState("");
+  const [batchYear, setBatchYear] = useState(2026);
+  const [section, setSection] = useState("A");
 
   const upload = async (e) => {
     setMsg(""); setErr("");
@@ -20,16 +26,49 @@ export default function AdminStudents() {
     }
   };
 
+  const submit = async () => {
+    setMsg(""); setErr("");
+    try {
+      await api.post("/admin/users", {
+        role: "STUDENT",
+        name,
+        email,
+        password,
+        student_id: studentId,
+        batch_year: Number(batchYear),
+        section
+      });
+      setMsg("Student created successfully.");
+      setName(""); setEmail(""); setPassword(""); setStudentId("");
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed");
+    }
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Typography variant="h5" sx={{ mb: 1 }}>Registration of Students</Typography>
       <Typography variant="body2" sx={{ mb: 2 }}>
-        Upload CSV for bulk students (student_id,name,email,batch_year,section)
+        Add a single student or upload CSV for bulk students.
       </Typography>
 
       {msg && <Alert severity="success" sx={{ mb: 2 }}>{msg}</Alert>}
       {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
 
+      <Stack spacing={2} sx={{ maxWidth: 520, mb: 3 }}>
+        <TextField label="Name" value={name} onChange={(e)=>setName(e.target.value)} />
+        <TextField label="Email" value={email} onChange={(e)=>setEmail(e.target.value)} />
+        <TextField label="Pass" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} />
+        <TextField label="Student ID" value={studentId} onChange={(e)=>setStudentId(e.target.value)} />
+        <TextField label="Batch Year" type="number" value={batchYear} onChange={(e)=>setBatchYear(e.target.value)} />
+        <TextField label="Section" value={section} onChange={(e)=>setSection(e.target.value)} />
+        <Button variant="contained" onClick={submit}>Add Student</Button>
+      </Stack>
+
+      <Typography variant="subtitle2" sx={{ mb: 1 }}>Bulk Upload</Typography>
+      <Typography variant="body2" sx={{ mb: 2 }}>
+        CSV columns: student_id,name,email,batch_year,section
+      </Typography>
       <Button variant="contained" component="label">
         Upload CSV
         <input hidden type="file" accept=".csv" onChange={upload} />

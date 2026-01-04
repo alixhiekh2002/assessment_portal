@@ -34,7 +34,13 @@ export default function HodAssign() {
       <Stack spacing={2} sx={{ maxWidth: 520 }}>
         <TextField label="Faculty User ID (UUID)" value={facultyUserId} onChange={(e)=>setFacultyUserId(e.target.value)} />
         <TextField label="Batch Year" type="number" value={batchYear} onChange={(e)=>setBatchYear(e.target.value)} />
-        <TextField label="Semester No" type="number" value={semesterNo} onChange={(e)=>setSemesterNo(e.target.value)} />
+        <TextField
+          label="Semester No"
+          type="number"
+          value={semesterNo}
+          onChange={(e)=>setSemesterNo(e.target.value)}
+          inputProps={{ min: 1 }}
+        />
         <TextField label="Course Code" value={courseCode} onChange={(e)=>setCourseCode(e.target.value)} />
         <Button variant="contained" onClick={submit}>Assign</Button>
       </Stack>

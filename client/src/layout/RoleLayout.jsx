@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { drawerConfig } from "../config/drawerConfig";
 import { getUser, logout } from "../services/auth";
+import { api } from "../services/api";
 import {
-  AppBar, Toolbar, Typography, Box, Drawer, List, ListItemButton, ListItemText, IconButton, Divider, Button
+  AppBar, Toolbar, Typography, Box, Drawer, List, ListItemButton, ListItemText, IconButton, Divider, Button, Collapse
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 
@@ -14,6 +15,8 @@ export default function RoleLayout() {
   const nav = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(true);
+  const [coursesOpen, setCoursesOpen] = useState(false);
+  const [courses, setCourses] = useState([]);
 
   const items = useMemo(() => drawerConfig[user?.role] || [], [user?.role]);
 
@@ -23,6 +26,22 @@ export default function RoleLayout() {
     logout();
     nav("/login");
   };
+
+  useEffect(() => {
+    let ignore = false;
+    const loadCourses = async () => {
+      try {
+        const { data } = await api.get("/faculty/my-courses");
+        if (!ignore) setCourses(data.courses || []);
+      } catch {
+        if (!ignore) setCourses([]);
+      }
+    };
+    if (user?.role === "FACULTY") {
+      loadCourses();
+    }
+    return () => { ignore = true; };
+  }, [user?.role]);
 
   return (
     <Box sx={{ display: "flex" }}>
@@ -53,15 +72,45 @@ export default function RoleLayout() {
         </Box>
         <Divider />
         <List>
-          {items.map((it) => (
-            <ListItemButton
-              key={it.path}
-              selected={location.pathname === it.path}
-              onClick={() => go(it.path)}
-            >
-              <ListItemText primary={it.label} />
-            </ListItemButton>
-          ))}
+          {items.map((it) => {
+            if (user?.role === "FACULTY" && it.label === "My Courses") {
+              return (
+                <React.Fragment key={it.path}>
+                  <ListItemButton onClick={() => setCoursesOpen(!coursesOpen)}>
+                    <ListItemText primary={it.label} />
+                  </ListItemButton>
+                  <Collapse in={coursesOpen} timeout="auto" unmountOnExit>
+                    <List component="div" disablePadding>
+                      {courses.map((c) => (
+                        <ListItemButton
+                          key={`${c.course_code}-${c.batch_id}-${c.semester_no}`}
+                          sx={{ pl: 4 }}
+                          onClick={() => go(`/faculty/course?courseCode=${c.course_code}&batchYear=${c.batch_year}&semesterNo=${c.semester_no}`)}
+                        >
+                          <ListItemText primary={`${c.course_code} - ${c.title} - Sem ${c.semester_no} - Batch ${c.batch_year}`} />
+                        </ListItemButton>
+                      ))}
+                      {courses.length === 0 && (
+                        <ListItemButton sx={{ pl: 4 }} disabled>
+                          <ListItemText primary="No assigned courses" />
+                        </ListItemButton>
+                      )}
+                    </List>
+                  </Collapse>
+                </React.Fragment>
+              );
+            }
+
+            return (
+              <ListItemButton
+                key={it.path}
+                selected={location.pathname === it.path}
+                onClick={() => go(it.path)}
+              >
+                <ListItemText primary={it.label} />
+              </ListItemButton>
+            );
+          })}
         </List>
       </Drawer>
 

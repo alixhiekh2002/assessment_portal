@@ -130,6 +130,15 @@ CREATE TABLE IF NOT EXISTS assessment_items (
   UNIQUE(component_id, item_no)
 );
 
+CREATE TABLE IF NOT EXISTS assessment_plan_rows (
+  id SERIAL PRIMARY KEY,
+  plan_id INT NOT NULL REFERENCES assessment_plans(id) ON DELETE CASCADE,
+  component_type TEXT NOT NULL,
+  clo_id INT NOT NULL REFERENCES clos(id) ON DELETE CASCADE,
+  max_marks INT NOT NULL,
+  UNIQUE(plan_id, component_type, clo_id)
+);
+
 CREATE TABLE IF NOT EXISTS item_clo_map (
   id SERIAL PRIMARY KEY,
   item_id INT NOT NULL REFERENCES assessment_items(id) ON DELETE CASCADE,
@@ -146,6 +155,16 @@ CREATE TABLE IF NOT EXISTS item_marks (
   created_by UUID NOT NULL REFERENCES users(id),
   created_at TIMESTAMP DEFAULT now(),
   UNIQUE(student_user_id, item_id)
+);
+
+CREATE TABLE IF NOT EXISTS clo_marks (
+  id SERIAL PRIMARY KEY,
+  student_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  plan_row_id INT NOT NULL REFERENCES assessment_plan_rows(id) ON DELETE CASCADE,
+  obtained NUMERIC(6,2) NOT NULL CHECK(obtained >= 0),
+  created_by UUID NOT NULL REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT now(),
+  UNIQUE(student_user_id, plan_row_id)
 );
 
 CREATE TABLE IF NOT EXISTS clo_attainment (

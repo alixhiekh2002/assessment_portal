@@ -1,81 +1,174 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../services/api";
-import { Paper, Typography, TextField, Button, Alert, Stack, MenuItem } from "@mui/material";
+import {
+  Paper, Typography, Alert, Table, TableHead, TableRow, TableCell, TableBody, TextField, Button
+} from "@mui/material";
 
-const TYPES = ["MID","FINAL","QUIZ","ASSIGNMENT","VIVA","OEL"];
-
-export default function FacultyMarksEntry() {
-  const [studentId, setStudentId] = useState("2026-CS-001");
-  const [courseCode, setCourseCode] = useState("CMC111");
-  const [batchYear, setBatchYear] = useState(2026);
-  const [semesterNo, setSemesterNo] = useState(1);
-  const [componentType, setComponentType] = useState("MID");
-  const [itemNo, setItemNo] = useState(1);
-  const [obtained, setObtained] = useState(0);
-
+export default function FacultyMarksEntry({
+  courseCode: initialCourseCode = "CMC111",
+  batchYear: initialBatchYear = 2026,
+  semesterNo: initialSemesterNo = 1
+}) {
+  const [courseCode, setCourseCode] = useState(initialCourseCode);
+  const [batchYear, setBatchYear] = useState(initialBatchYear);
+  const [semesterNo, setSemesterNo] = useState(initialSemesterNo);
+  const [rows, setRows] = useState([]);
+  const [students, setStudents] = useState([]);
+  const [marks, setMarks] = useState({});
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  const save = async () => {
+  useEffect(() => {
+    setCourseCode(initialCourseCode || "");
+  }, [initialCourseCode]);
+
+  useEffect(() => {
+    if (Number.isFinite(initialBatchYear)) setBatchYear(initialBatchYear || 0);
+  }, [initialBatchYear]);
+
+  useEffect(() => {
+    if (Number.isFinite(initialSemesterNo)) setSemesterNo(initialSemesterNo || 0);
+  }, [initialSemesterNo]);
+
+  const loadPlan = async () => {
+    if (!courseCode || !batchYear || !semesterNo) return;
+    try {
+      const { data } = await api.get("/faculty/assessment-plan", {
+        params: { courseCode, batchYear, semesterNo }
+      });
+      setRows(data.rows || []);
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed to load plan");
+    }
+  };
+
+  const loadStudents = async () => {
+    if (!courseCode || !batchYear || !semesterNo) return;
+    try {
+      const { data } = await api.get("/faculty/course-students", {
+        params: { courseCode, batchYear, semesterNo }
+      });
+      setStudents(data.students || []);
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed to load students");
+    }
+  };
+
+  const loadMarks = async () => {
+    if (!courseCode || !batchYear || !semesterNo) return;
+    try {
+      const { data } = await api.get("/faculty/marks/entries", {
+        params: { courseCode, batchYear, semesterNo }
+      });
+      const next = {};
+      for (const m of data.marks || []) {
+        if (!next[m.student_id]) next[m.student_id] = {};
+        next[m.student_id][m.plan_row_id] = m.obtained;
+      }
+      setMarks(next);
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed to load marks");
+    }
+  };
+
+  useEffect(() => {
+    setErr("");
+    loadPlan();
+    loadStudents();
+    loadMarks();
+  }, [courseCode, batchYear, semesterNo]);
+
+  const headers = useMemo(() => {
+    return rows.map((r) => ({
+      id: r.id,
+      label: `${r.component_type} (CLO${r.clo_no}) / ${r.max_marks}`
+    }));
+  }, [rows]);
+
+  const setMark = (studentId, planRowId, value) => {
+    setMarks((prev) => ({
+      ...prev,
+      [studentId]: { ...(prev[studentId] || {}), [planRowId]: value }
+    }));
+  };
+
+  const submitStudent = async (studentId) => {
     setMsg(""); setErr("");
     try {
-      await api.post("/faculty/marks/item", {
+      const rowMarks = marks[studentId] || {};
+      const payload = Object.entries(rowMarks)
+        .map(([planRowId, obtained]) => ({
+          plan_row_id: Number(planRowId),
+          obtained: Number(obtained)
+        }))
+        .filter((m) => Number.isFinite(m.obtained));
+
+      await api.post("/faculty/marks/entry", {
         student_id: studentId,
         course_code: courseCode,
         batch_year: Number(batchYear),
         semester_no: Number(semesterNo),
-        component_type: componentType,
-        item_no: Number(itemNo),
-        obtained: Number(obtained)
+        marks: payload
       });
-      setMsg("Saved item mark + recomputed CLO/GA + alerts (if GA<50).");
+      setMsg(`Marks submitted for ${studentId}.`);
     } catch (e) {
-      setErr(e?.response?.data?.message || "Failed");
-    }
-  };
-
-  const uploadCsv = async (e) => {
-    setMsg(""); setErr("");
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const fd = new FormData();
-    fd.append("file", file);
-    try {
-      const { data } = await api.post("/faculty/marks/upload-csv", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      setMsg(`CSV processed rows: ${data.processed}`);
-    } catch (e) {
-      setErr(e?.response?.data?.message || "Upload failed");
+      setErr(e?.response?.data?.message || "Failed to submit marks");
     }
   };
 
   return (
     <Paper sx={{ p: 3 }}>
-      <Typography variant="h5" sx={{ mb: 2 }}>Marks Entry (Item Level)</Typography>
+      <Typography variant="h5" sx={{ mb: 2 }}>Marks Entry</Typography>
       {msg && <Alert severity="success" sx={{ mb: 2 }}>{msg}</Alert>}
       {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
 
-      <Stack spacing={2} sx={{ maxWidth: 640 }}>
-        <TextField label="Student ID" value={studentId} onChange={(e)=>setStudentId(e.target.value)} />
-        <TextField label="Course Code" value={courseCode} onChange={(e)=>setCourseCode(e.target.value)} />
-        <TextField label="Batch Year" type="number" value={batchYear} onChange={(e)=>setBatchYear(e.target.value)} />
-        <TextField label="Semester No" type="number" value={semesterNo} onChange={(e)=>setSemesterNo(e.target.value)} />
-        <TextField select label="Component Type" value={componentType} onChange={(e)=>setComponentType(e.target.value)}>
-          {TYPES.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-        </TextField>
-        <TextField label="Item No" type="number" value={itemNo} onChange={(e)=>setItemNo(e.target.value)} />
-        <TextField label="Obtained Marks" type="number" value={obtained} onChange={(e)=>setObtained(e.target.value)} />
-
-        <Button variant="contained" onClick={save}>Save Item Mark</Button>
-
-        <Button variant="outlined" component="label">
-          Upload CSV (Item Marks)
-          <input hidden type="file" accept=".csv" onChange={uploadCsv} />
-        </Button>
-
-        <Typography variant="caption">
-          CSV columns: student_id,course_code,batch_year,semester_no,component_type,item_no,obtained
+      {rows.length === 0 && (
+        <Typography variant="body2" sx={{ mb: 2 }}>
+          No assessment plan rows found. Please add plan rows first.
         </Typography>
-      </Stack>
+      )}
+
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell>Reg No</TableCell>
+            <TableCell>Name</TableCell>
+            {headers.map((h) => (
+              <TableCell key={h.id}>{h.label}</TableCell>
+            ))}
+            <TableCell>Action</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {students.map((s) => (
+            <TableRow key={s.student_id}>
+              <TableCell>{s.student_id}</TableCell>
+              <TableCell>{s.name}</TableCell>
+              {headers.map((h) => (
+                <TableCell key={`${s.student_id}-${h.id}`}>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={(marks[s.student_id] || {})[h.id] || ""}
+                    onChange={(e)=>setMark(s.student_id, h.id, e.target.value)}
+                    inputProps={{ min: 0 }}
+                  />
+                </TableCell>
+              ))}
+              <TableCell>
+                <Button size="small" variant="contained" onClick={() => submitStudent(s.student_id)}>
+                  Submit
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+          {students.length === 0 && (
+            <TableRow>
+              <TableCell colSpan={headers.length + 3}>No students found.</TableCell>
+            </TableRow>
+          )}
+        </TableBody>
+      </Table>
     </Paper>
   );
 }

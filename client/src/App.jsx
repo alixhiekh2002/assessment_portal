@@ -8,10 +8,13 @@ import AdminDashboard from "./pages/admin/AdminDashboard.jsx";
 import AdminStudents from "./pages/admin/AdminStudents.jsx";
 import AdminFaculty from "./pages/admin/AdminFaculty.jsx";
 import AdminHods from "./pages/admin/AdminHods.jsx";
+import AdminCourses from "./pages/admin/AdminCourses.jsx";
 
 import HodDashboard from "./pages/hod/HodDashboard.jsx";
 import HodAssign from "./pages/hod/HodAssign.jsx";
 import HodAlerts from "./pages/hod/HodAlerts.jsx";
+import HodBatches from "./pages/hod/HodBatches.jsx";
+import HodFaculty from "./pages/hod/HodFaculty.jsx";
 
 import FacultyDashboard from "./pages/faculty/FacultyDashboard.jsx";
 import FacultyCourses from "./pages/faculty/FacultyCourses.jsx";
@@ -19,6 +22,7 @@ import FacultyCloGa from "./pages/faculty/FacultyCloGa.jsx";
 import FacultyAssessmentPlan from "./pages/faculty/FacultyAssessmentPlan.jsx";
 import FacultyMarksEntry from "./pages/faculty/FacultyMarksEntry.jsx";
 import FacultyStudentResults from "./pages/faculty/FacultyStudentResults.jsx";
+import FacultyCourseTabs from "./pages/faculty/FacultyCourseTabs.jsx";
 
 import StudentDashboard from "./pages/student/StudentDashboard.jsx";
 import StudentCourses from "./pages/student/StudentCourses.jsx";
@@ -36,15 +40,19 @@ export default function App() {
           <Route path="/admin/students" element={<AdminStudents />} />
           <Route path="/admin/faculty" element={<AdminFaculty />} />
           <Route path="/admin/hods" element={<AdminHods />} />
+          <Route path="/admin/courses" element={<AdminCourses />} />
 
           {/* HOD */}
           <Route path="/hod/dashboard" element={<HodDashboard />} />
           <Route path="/hod/assign" element={<HodAssign />} />
           <Route path="/hod/alerts" element={<HodAlerts />} />
+          <Route path="/hod/batches" element={<HodBatches />} />
+          <Route path="/hod/faculty" element={<HodFaculty />} />
 
           {/* FACULTY */}
           <Route path="/faculty/dashboard" element={<FacultyDashboard />} />
           <Route path="/faculty/courses" element={<FacultyCourses />} />
+          <Route path="/faculty/course" element={<FacultyCourseTabs />} />
           <Route path="/faculty/clo-ga-map" element={<FacultyCloGa />} />
           <Route path="/faculty/assessment-plan" element={<FacultyAssessmentPlan />} />
           <Route path="/faculty/marks-entry" element={<FacultyMarksEntry />} />

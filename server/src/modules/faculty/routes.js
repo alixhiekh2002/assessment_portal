@@ -16,11 +16,27 @@ router.use(auth, requireRole("FACULTY"));
 router.get("/my-courses", async (req, res, next) => {
   try {
     const { rows } = await query(`
-      SELECT ca.course_code, c.title, c.is_lab, ca.batch_id, b.batch_year, ca.semester_no
+      SELECT
+        ca.course_code,
+        c.title,
+        c.is_lab,
+        ca.batch_id,
+        b.batch_year,
+        ca.semester_no,
+        COALESCE(
+          string_agg(DISTINCT s.section, ', ') FILTER (WHERE s.section IS NOT NULL),
+          ''
+        ) AS sections
       FROM course_assignments ca
       JOIN courses c ON c.code = ca.course_code
       JOIN batches b ON b.id = ca.batch_id
+      LEFT JOIN enrollments e
+        ON e.course_code = ca.course_code
+       AND e.batch_id = ca.batch_id
+       AND e.semester_no = ca.semester_no
+      LEFT JOIN students s ON s.user_id = e.student_user_id
       WHERE ca.faculty_user_id=$1
+      GROUP BY ca.course_code, c.title, c.is_lab, ca.batch_id, b.batch_year, ca.semester_no
       ORDER BY b.batch_year, ca.semester_no, ca.course_code
     `, [req.user.userId]);
     res.json({ courses: rows });
@@ -31,7 +47,7 @@ router.get("/my-courses", async (req, res, next) => {
 router.post("/courses/:courseCode/clos", async (req,res,next)=> {
   try{
     const courseCode = req.params.courseCode;
-    const schema = z.object({ clo_no: z.number().int(), title: z.string().min(3) });
+    const schema = z.object({ clo_no: z.number().int().min(1), title: z.string().min(3) });
     const body = schema.parse(req.body);
 
     const ins = await query(`
@@ -43,6 +59,21 @@ router.post("/courses/:courseCode/clos", async (req,res,next)=> {
     );
     res.json({ clo: ins.rows[0] });
   } catch(e){ next(e); }
+});
+
+/** List CLOs for a course */
+router.get("/courses/:courseCode/clos", async (req, res, next) => {
+  try {
+    const courseCode = req.params.courseCode;
+    const { rows } = await query(
+      `SELECT id, clo_no, title
+       FROM clos
+       WHERE course_code=$1
+       ORDER BY clo_no`,
+      [courseCode]
+    );
+    res.json({ clos: rows });
+  } catch (e) { next(e); }
 });
 
 /** Map CLO -> GA */
@@ -66,17 +97,13 @@ router.post("/clos/:cloId/map-ga", async (req,res,next)=> {
   } catch(e){ next(e); }
 });
 
-/** Create/Update assessment plan with components */
+/** Create or fetch assessment plan */
 router.post("/assessment-plan", async (req,res,next)=> {
   try{
     const schema = z.object({
       course_code: z.string(),
       batch_year: z.number().int(),
-      semester_no: z.number().int(),
-      components: z.array(z.object({
-        type: z.enum(["MID","FINAL","QUIZ","ASSIGNMENT","VIVA","OEL"]),
-        total_marks: z.number().int().positive()
-      }))
+      semester_no: z.number().int().min(1)
     });
     const body = schema.parse(req.body);
 
@@ -87,8 +114,72 @@ router.post("/assessment-plan", async (req,res,next)=> {
     const course = await query(`SELECT is_lab FROM courses WHERE code=$1`, [body.course_code]);
     if(!course.rows[0]) return res.status(404).json({ message:"Course not found" });
 
-    // OEL restriction
-    if (!course.rows[0].is_lab && body.components.some(c => c.type === "OEL")) {
+    const plan = await query(`
+      INSERT INTO assessment_plans (course_code, batch_id, semester_no, created_by)
+      VALUES ($1,$2,$3,$4)
+      ON CONFLICT (course_code, batch_id, semester_no)
+      DO UPDATE SET created_by=EXCLUDED.created_by
+      RETURNING *`,
+      [body.course_code, batchId, body.semester_no, req.user.userId]
+    );
+
+    res.json({ ok:true, plan: plan.rows[0] });
+  } catch(e){ next(e); }
+});
+
+/** Get assessment plan rows */
+router.get("/assessment-plan", async (req,res,next)=> {
+  try{
+    const courseCode = String(req.query.courseCode || "");
+    const batchYear = Number(req.query.batchYear);
+    const semesterNo = Number(req.query.semesterNo);
+    if(!courseCode || !batchYear || !semesterNo || semesterNo < 1) return res.status(400).json({ message:"courseCode,batchYear,semesterNo required" });
+
+    const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [batchYear]);
+    const batchId = b.rows[0]?.id;
+    if(!batchId) return res.status(404).json({ message:"Batch not found" });
+
+    const plan = await query(
+      `SELECT id FROM assessment_plans WHERE course_code=$1 AND batch_id=$2 AND semester_no=$3`,
+      [courseCode, batchId, semesterNo]
+    );
+    const planId = plan.rows[0]?.id;
+    if (!planId) return res.json({ plan: null, rows: [] });
+
+    const rows = await query(`
+      SELECT apr.id, apr.component_type, apr.max_marks,
+             c.id as clo_id, c.clo_no, c.title
+      FROM assessment_plan_rows apr
+      JOIN clos c ON c.id = apr.clo_id
+      WHERE apr.plan_id=$1
+      ORDER BY apr.component_type, c.clo_no
+    `, [planId]);
+
+    res.json({ plan: { id: planId }, rows: rows.rows });
+  } catch(e){ next(e); }
+});
+
+/** Add assessment plan row (component + CLO + max) */
+router.post("/assessment-plan/rows", async (req,res,next)=> {
+  try{
+    const schema = z.object({
+      course_code: z.string(),
+      batch_year: z.number().int(),
+      semester_no: z.number().int().min(1),
+      component_type: z.enum(["MID","FINAL","QUIZ","ASSIGNMENT","VIVA","OEL"]),
+      clo_id: z.number().int(),
+      max_marks: z.number().int().positive()
+    });
+    const body = schema.parse(req.body);
+
+    const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [body.batch_year]);
+    const batchId = b.rows[0]?.id;
+    if(!batchId) return res.status(404).json({ message:"Batch not found" });
+
+    const course = await query(`SELECT is_lab FROM courses WHERE code=$1`, [body.course_code]);
+    if(!course.rows[0]) return res.status(404).json({ message:"Course not found" });
+
+    if (!course.rows[0].is_lab && body.component_type === "OEL") {
       return res.status(400).json({ message:"OEL is allowed only for LAB courses." });
     }
 
@@ -101,66 +192,116 @@ router.post("/assessment-plan", async (req,res,next)=> {
       [body.course_code, batchId, body.semester_no, req.user.userId]
     );
 
-    // Upsert components
-    for (const c of body.components) {
-      await query(`
-        INSERT INTO assessment_components (plan_id, type, total_marks)
-        VALUES ($1,$2,$3)
-        ON CONFLICT (plan_id, type) DO UPDATE SET total_marks=EXCLUDED.total_marks
-      `, [plan.rows[0].id, c.type, c.total_marks]);
+    const ins = await query(`
+      INSERT INTO assessment_plan_rows (plan_id, component_type, clo_id, max_marks)
+      VALUES ($1,$2,$3,$4)
+      ON CONFLICT (plan_id, component_type, clo_id)
+      DO UPDATE SET max_marks=EXCLUDED.max_marks
+      RETURNING *`,
+      [plan.rows[0].id, body.component_type, body.clo_id, body.max_marks]
+    );
+
+    res.json({ row: ins.rows[0] });
+  } catch(e){ next(e); }
+});
+
+/** Update assessment plan row */
+router.patch("/assessment-plan/rows/:rowId", async (req,res,next)=> {
+  try{
+    const rowId = Number(req.params.rowId);
+    const schema = z.object({ max_marks: z.number().int().positive() });
+    const body = schema.parse(req.body);
+
+    const upd = await query(
+      `UPDATE assessment_plan_rows SET max_marks=$1 WHERE id=$2 RETURNING *`,
+      [body.max_marks, rowId]
+    );
+    if (!upd.rows[0]) return res.status(404).json({ message:"Row not found" });
+    res.json({ row: upd.rows[0] });
+  } catch(e){ next(e); }
+});
+
+/** Delete assessment plan row */
+router.delete("/assessment-plan/rows/:rowId", async (req,res,next)=> {
+  try{
+    const rowId = Number(req.params.rowId);
+    await query(`DELETE FROM assessment_plan_rows WHERE id=$1`, [rowId]);
+    res.json({ ok:true });
+  } catch(e){ next(e); }
+});
+
+/** List students in a course offering */
+router.get("/course-students", async (req,res,next)=> {
+  try{
+    const courseCode = String(req.query.courseCode || "");
+    const batchYear = Number(req.query.batchYear);
+    const semesterNo = Number(req.query.semesterNo);
+    if(!courseCode || !batchYear || !semesterNo || semesterNo < 1) return res.status(400).json({ message:"courseCode,batchYear,semesterNo required" });
+
+    const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [batchYear]);
+    const batchId = b.rows[0]?.id;
+    if(!batchId) return res.status(404).json({ message:"Batch not found" });
+
+    const students = await query(`
+      SELECT s.student_id, u.name, u.email, s.section
+      FROM enrollments e
+      JOIN users u ON u.id = e.student_user_id
+      JOIN students s ON s.user_id = u.id
+      WHERE e.course_code=$1 AND e.batch_id=$2 AND e.semester_no=$3
+      ORDER BY s.student_id
+    `, [courseCode, batchId, semesterNo]);
+
+    res.json({ students: students.rows });
+  } catch(e){ next(e); }
+});
+
+/** Get existing marks for a course offering (CLO-level per component) */
+router.get("/marks/entries", async (req,res,next)=> {
+  try{
+    const courseCode = String(req.query.courseCode || "");
+    const batchYear = Number(req.query.batchYear);
+    const semesterNo = Number(req.query.semesterNo);
+    if(!courseCode || !batchYear || !semesterNo || semesterNo < 1) {
+      return res.status(400).json({ message:"courseCode,batchYear,semesterNo required" });
     }
 
-    res.json({ ok:true, plan: plan.rows[0] });
-  } catch(e){ next(e); }
-});
+    const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [batchYear]);
+    const batchId = b.rows[0]?.id;
+    if(!batchId) return res.status(404).json({ message:"Batch not found" });
 
-/** Add assessment item inside a component */
-router.post("/assessment/components/:componentId/items", async (req,res,next)=> {
-  try{
-    const componentId = Number(req.params.componentId);
-    const schema = z.object({ item_no: z.number().int().positive(), title: z.string().optional(), max_marks: z.number().positive() });
-    const body = schema.parse(req.body);
-
-    const ins = await query(`
-      INSERT INTO assessment_items (component_id, item_no, title, max_marks)
-      VALUES ($1,$2,$3,$4)
-      ON CONFLICT (component_id, item_no) DO UPDATE SET title=EXCLUDED.title, max_marks=EXCLUDED.max_marks
-      RETURNING *`,
-      [componentId, body.item_no, body.title || null, body.max_marks]
+    const plan = await query(
+      `SELECT id FROM assessment_plans WHERE course_code=$1 AND batch_id=$2 AND semester_no=$3`,
+      [courseCode, batchId, semesterNo]
     );
-    res.json({ item: ins.rows[0] });
+    const planId = plan.rows[0]?.id;
+    if (!planId) return res.json({ marks: [] });
+
+    const { rows } = await query(`
+      SELECT s.student_id, cm.plan_row_id, cm.obtained
+      FROM clo_marks cm
+      JOIN assessment_plan_rows apr ON apr.id = cm.plan_row_id
+      JOIN assessment_plans ap ON ap.id = apr.plan_id
+      JOIN students s ON s.user_id = cm.student_user_id
+      WHERE ap.id=$1
+      ORDER BY s.student_id
+    `, [planId]);
+
+    res.json({ marks: rows });
   } catch(e){ next(e); }
 });
 
-/** Map item -> CLO (supports weight) */
-router.post("/assessment/items/:itemId/map-clo", async (req,res,next)=> {
-  try{
-    const itemId = Number(req.params.itemId);
-    const schema = z.object({ clo_id: z.number().int(), weight: z.number().optional() });
-    const body = schema.parse(req.body);
-
-    const ins = await query(`
-      INSERT INTO item_clo_map (item_id, clo_id, weight)
-      VALUES ($1,$2,COALESCE($3,1.0))
-      ON CONFLICT (item_id, clo_id) DO UPDATE SET weight=EXCLUDED.weight
-      RETURNING *`,
-      [itemId, body.clo_id, body.weight ?? 1.0]
-    );
-    res.json({ map: ins.rows[0] });
-  } catch(e){ next(e); }
-});
-
-/** Manual item marks entry */
-router.post("/marks/item", async (req,res,next)=> {
+/** Submit marks for a student (CLO-level per component) */
+router.post("/marks/entry", async (req,res,next)=> {
   try{
     const schema = z.object({
       student_id: z.string(),
       course_code: z.string(),
       batch_year: z.number().int(),
-      semester_no: z.number().int(),
-      component_type: z.enum(["MID","FINAL","QUIZ","ASSIGNMENT","VIVA","OEL"]),
-      item_no: z.number().int(),
-      obtained: z.number()
+      semester_no: z.number().int().min(1),
+      marks: z.array(z.object({
+        plan_row_id: z.number().int(),
+        obtained: z.number()
+      }))
     });
     const body = schema.parse(req.body);
 
@@ -174,33 +315,35 @@ router.post("/marks/item", async (req,res,next)=> {
     const studentUserId = stu.rows[0]?.user_id;
     if(!studentUserId) return res.status(404).json({ message:"Student not found in batch" });
 
-    const comp = await query(`
-      SELECT ai.id as item_id
-      FROM assessment_plans ap
-      JOIN assessment_components ac ON ac.plan_id = ap.id
-      JOIN assessment_items ai ON ai.component_id = ac.id
-      WHERE ap.course_code=$1 AND ap.batch_id=$2 AND ap.semester_no=$3
-        AND ac.type=$4 AND ai.item_no=$5
-      LIMIT 1
-    `, [body.course_code, batchId, body.semester_no, body.component_type, body.item_no]);
-    const itemId = comp.rows[0]?.item_id;
-    if(!itemId) return res.status(404).json({ message:"Assessment item not found (plan/component/item)" });
+    const plan = await query(
+      `SELECT id FROM assessment_plans WHERE course_code=$1 AND batch_id=$2 AND semester_no=$3`,
+      [body.course_code, batchId, body.semester_no]
+    );
+    const planId = plan.rows[0]?.id;
+    if (!planId) return res.status(404).json({ message:"Assessment plan not found" });
 
-    await query(`
-      INSERT INTO item_marks (student_user_id, item_id, obtained, created_by)
-      VALUES ($1,$2,$3,$4)
-      ON CONFLICT (student_user_id, item_id) DO UPDATE SET obtained=EXCLUDED.obtained, created_by=EXCLUDED.created_by, created_at=now()
-    `, [studentUserId, itemId, body.obtained, req.user.userId]);
+    const planRows = await query(`SELECT id FROM assessment_plan_rows WHERE plan_id=$1`, [planId]);
+    const allowed = new Set(planRows.rows.map(r => r.id));
 
-    // recompute CLO+GA+alerts
+    for (const m of body.marks) {
+      if (!allowed.has(m.plan_row_id)) continue;
+      await query(`
+        INSERT INTO clo_marks (student_user_id, plan_row_id, obtained, created_by)
+        VALUES ($1,$2,$3,$4)
+        ON CONFLICT (student_user_id, plan_row_id)
+        DO UPDATE SET obtained=EXCLUDED.obtained, created_by=EXCLUDED.created_by, created_at=now()
+      `, [studentUserId, m.plan_row_id, m.obtained, req.user.userId]);
+    }
+
     await recomputeCLOAttainment({ studentUserId, courseCode: body.course_code, batchId, semesterNo: body.semester_no });
     await recomputeGAAttainmentAndAlerts({ studentUserId, courseCode: body.course_code, batchId, semesterNo: body.semester_no });
+    await recomputeCourseGrade({ studentUserId, courseCode: body.course_code, batchId, semesterNo: body.semester_no });
 
     res.json({ ok:true });
   } catch(e){ next(e); }
 });
 
-/** Upload CSV for item marks */
+/** Upload CSV for CLO-level marks */
 router.post("/marks/upload-csv", upload.single("file"), async (req,res,next)=> {
   try{
     if(!req.file) return res.status(400).json({ message:"file required" });
@@ -213,9 +356,9 @@ router.post("/marks/upload-csv", upload.single("file"), async (req,res,next)=> {
         student_id: z.string(),
         course_code: z.string(),
         batch_year: z.coerce.number().int(),
-        semester_no: z.coerce.number().int(),
+        semester_no: z.coerce.number().int().min(1),
         component_type: z.enum(["MID","FINAL","QUIZ","ASSIGNMENT","VIVA","OEL"]),
-        item_no: z.coerce.number().int(),
+        clo_no: z.coerce.number().int().min(1),
         obtained: z.coerce.number()
       });
       const body = schema.parse(row);
@@ -228,28 +371,37 @@ router.post("/marks/upload-csv", upload.single("file"), async (req,res,next)=> {
       const studentUserId = stu.rows[0]?.user_id;
       if(!studentUserId) continue;
 
-      const item = await query(`
-        SELECT ai.id as item_id
-        FROM assessment_plans ap
-        JOIN assessment_components ac ON ac.plan_id = ap.id
-        JOIN assessment_items ai ON ai.component_id = ac.id
-        WHERE ap.course_code=$1 AND ap.batch_id=$2 AND ap.semester_no=$3
-          AND ac.type=$4 AND ai.item_no=$5
-        LIMIT 1
-      `, [body.course_code, batchId, body.semester_no, body.component_type, body.item_no]);
-      const itemId = item.rows[0]?.item_id;
-      if(!itemId) continue;
+      const plan = await query(
+        `SELECT id FROM assessment_plans WHERE course_code=$1 AND batch_id=$2 AND semester_no=$3`,
+        [body.course_code, batchId, body.semester_no]
+      );
+      const planId = plan.rows[0]?.id;
+      if (!planId) continue;
+
+      const clo = await query(
+        `SELECT id FROM clos WHERE course_code=$1 AND clo_no=$2`,
+        [body.course_code, body.clo_no]
+      );
+      const cloId = clo.rows[0]?.id;
+      if (!cloId) continue;
+
+      const rowRes = await query(
+        `SELECT id FROM assessment_plan_rows
+         WHERE plan_id=$1 AND component_type=$2 AND clo_id=$3`,
+        [planId, body.component_type, cloId]
+      );
+      const planRowId = rowRes.rows[0]?.id;
+      if (!planRowId) continue;
 
       await query(`
-        INSERT INTO item_marks (student_user_id, item_id, obtained, created_by)
+        INSERT INTO clo_marks (student_user_id, plan_row_id, obtained, created_by)
         VALUES ($1,$2,$3,$4)
-        ON CONFLICT (student_user_id, item_id) DO UPDATE SET obtained=EXCLUDED.obtained, created_by=EXCLUDED.created_by, created_at=now()
-      `, [studentUserId, itemId, body.obtained, req.user.userId]);
+        ON CONFLICT (student_user_id, plan_row_id)
+        DO UPDATE SET obtained=EXCLUDED.obtained, created_by=EXCLUDED.created_by, created_at=now()
+      `, [studentUserId, planRowId, body.obtained, req.user.userId]);
 
       await recomputeCLOAttainment({ studentUserId, courseCode: body.course_code, batchId, semesterNo: body.semester_no });
       await recomputeGAAttainmentAndAlerts({ studentUserId, courseCode: body.course_code, batchId, semesterNo: body.semester_no });
-
-      // also compute course overall % and store course_grades (optional step each upload)
       await recomputeCourseGrade({ studentUserId, courseCode: body.course_code, batchId, semesterNo: body.semester_no });
 
       processed += 1;
@@ -265,7 +417,7 @@ router.get("/student-results", async (req,res,next)=> {
     const courseCode = String(req.query.courseCode || "");
     const batchYear = Number(req.query.batchYear);
     const semesterNo = Number(req.query.semesterNo);
-    if(!courseCode || !batchYear || !semesterNo) return res.status(400).json({ message:"courseCode,batchYear,semesterNo required" });
+    if(!courseCode || !batchYear || !semesterNo || semesterNo < 1) return res.status(400).json({ message:"courseCode,batchYear,semesterNo required" });
 
     const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [batchYear]);
     const batchId = b.rows[0]?.id;
@@ -320,16 +472,15 @@ router.get("/student-results", async (req,res,next)=> {
 
 /** Internal: recompute course overall % and store course_grades */
 async function recomputeCourseGrade({ studentUserId, courseCode, batchId, semesterNo }) {
-  // total obtained across all items in this plan / total max
+  // total obtained across all plan rows / total max
   const { rows } = await query(`
     SELECT
-      SUM(im.obtained) AS obtained,
-      SUM(ai.max_marks) AS total
-    FROM item_marks im
-    JOIN assessment_items ai ON ai.id = im.item_id
-    JOIN assessment_components ac ON ac.id = ai.component_id
-    JOIN assessment_plans ap ON ap.id = ac.plan_id
-    WHERE im.student_user_id=$1 AND ap.course_code=$2 AND ap.batch_id=$3 AND ap.semester_no=$4
+      SUM(cm.obtained) AS obtained,
+      SUM(apr.max_marks) AS total
+    FROM clo_marks cm
+    JOIN assessment_plan_rows apr ON apr.id = cm.plan_row_id
+    JOIN assessment_plans ap ON ap.id = apr.plan_id
+    WHERE cm.student_user_id=$1 AND ap.course_code=$2 AND ap.batch_id=$3 AND ap.semester_no=$4
   `, [studentUserId, courseCode, batchId, semesterNo]);
 
   const obtained = Number(rows[0]?.obtained || 0);

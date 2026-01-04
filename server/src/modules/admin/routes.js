@@ -13,6 +13,95 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.use(auth, requireRole("ADMIN"));
 
+/** Admin dashboard overview */
+router.get("/dashboard", async (req, res, next) => {
+  try {
+    const hods = await query(`
+      SELECT u.id, u.name, u.email, h.department
+      FROM hods h
+      JOIN users u ON u.id = h.user_id
+      WHERE u.is_active=true
+      ORDER BY u.name
+    `);
+    const faculty = await query(`
+      SELECT u.id, u.name, u.email, f.department
+      FROM faculty f
+      JOIN users u ON u.id = f.user_id
+      WHERE u.is_active=true
+      ORDER BY u.name
+    `);
+    const batches = await query(`
+      SELECT id, batch_year, program
+      FROM batches
+      ORDER BY batch_year DESC, program
+    `);
+
+    res.json({
+      hods: hods.rows,
+      faculty: faculty.rows,
+      batches: batches.rows
+    });
+  } catch (e) { next(e); }
+});
+
+/** Students by batch */
+router.get("/batches/:batchId/students", async (req, res, next) => {
+  try {
+    const batchId = Number(req.params.batchId);
+    if (!batchId) return res.status(400).json({ message: "batchId required" });
+
+    const { rows } = await query(`
+      SELECT s.student_id, u.name, u.email, s.section, s.current_semester_no
+      FROM students s
+      JOIN users u ON u.id = s.user_id
+      WHERE s.batch_id=$1
+      ORDER BY s.student_id
+    `, [batchId]);
+
+    res.json({ students: rows });
+  } catch (e) { next(e); }
+});
+
+router.delete("/batches/:batchId", async (req, res, next) => {
+  try {
+    const batchId = Number(req.params.batchId);
+    if (!batchId) return res.status(400).json({ message: "batchId required" });
+
+    const batchRes = await query("SELECT batch_year FROM batches WHERE id=$1", [batchId]);
+    const batchYear = batchRes.rows[0]?.batch_year;
+    if (!batchYear) return res.status(404).json({ message: "Batch not found" });
+
+    await query("DELETE FROM alerts WHERE batch_year=$1", [batchYear]);
+    await query("DELETE FROM clo_attainment WHERE batch_id=$1", [batchId]);
+    await query("DELETE FROM ga_attainment WHERE batch_id=$1", [batchId]);
+    await query("DELETE FROM course_grades WHERE batch_id=$1", [batchId]);
+    await query("DELETE FROM enrollments WHERE batch_id=$1", [batchId]);
+    await query("DELETE FROM course_assignments WHERE batch_id=$1", [batchId]);
+    await query("DELETE FROM batch_courses WHERE batch_id=$1", [batchId]);
+    await query("DELETE FROM students WHERE batch_id=$1", [batchId]);
+    await query("DELETE FROM batches WHERE id=$1", [batchId]);
+
+    res.json({ ok: true });
+  } catch (e) { next(e); }
+});
+
+/** List courses by semester */
+router.get("/courses", async (req, res, next) => {
+  try {
+    const semesterNo = Number(req.query.semesterNo);
+    if (!semesterNo || semesterNo < 1) return res.status(400).json({ message: "semesterNo required" });
+
+    const { rows } = await query(
+      `SELECT code, title, is_lab, semester_no
+       FROM courses
+       WHERE semester_no=$1
+       ORDER BY code`,
+      [semesterNo]
+    );
+    res.json({ courses: rows });
+  } catch (e) { next(e); }
+});
+
 /** Create user (ADMIN adds HOD/FACULTY/STUDENT basic). Student profile created separately in bulk or single. */
 router.post("/users", async (req, res, next) => {
   try {
@@ -21,8 +110,20 @@ router.post("/users", async (req, res, next) => {
       name: z.string().min(2),
       email: z.string().email(),
       password: z.string().min(6),
+      department: z.string().min(2).optional(),
+      student_id: z.string().min(3).optional(),
+      batch_year: z.coerce.number().int().optional(),
+      section: z.string().optional(),
+      current_semester_no: z.coerce.number().int().min(1).optional(),
     });
     const body = schema.parse(req.body);
+
+    if ((body.role === "HOD" || body.role === "FACULTY") && !body.department) {
+      return res.status(400).json({ message: "department is required" });
+    }
+    if (body.role === "STUDENT" && (!body.student_id || !body.batch_year)) {
+      return res.status(400).json({ message: "student_id and batch_year are required" });
+    }
 
     const roleRes = await query("SELECT id FROM roles WHERE name=$1", [body.role]);
     const roleId = roleRes.rows[0]?.id;
@@ -35,6 +136,56 @@ router.post("/users", async (req, res, next) => {
        RETURNING id, name, email`,
       [roleId, body.name, body.email, hash]
     );
+
+    if (body.role === "HOD") {
+      await query(
+        `INSERT INTO hods (user_id, department)
+         VALUES ($1,$2)
+         ON CONFLICT (user_id) DO UPDATE SET department=EXCLUDED.department`,
+        [ins.rows[0].id, body.department]
+      );
+    }
+    if (body.role === "FACULTY") {
+      await query(
+        `INSERT INTO faculty (user_id, department)
+         VALUES ($1,$2)
+         ON CONFLICT (user_id) DO UPDATE SET department=EXCLUDED.department`,
+        [ins.rows[0].id, body.department]
+      );
+    }
+    if (body.role === "STUDENT") {
+      const b = await query(
+        `INSERT INTO batches (batch_year, program)
+         VALUES ($1, 'BSCS')
+         ON CONFLICT (batch_year, program) DO UPDATE SET program=EXCLUDED.program
+         RETURNING id`,
+        [body.batch_year]
+      );
+      const batchId = b.rows[0].id;
+      const sem = body.current_semester_no || 1;
+
+      await query(
+        `INSERT INTO students (user_id, student_id, batch_id, current_semester_no, section)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (user_id) DO UPDATE
+         SET student_id=EXCLUDED.student_id, batch_id=EXCLUDED.batch_id, current_semester_no=EXCLUDED.current_semester_no, section=EXCLUDED.section`,
+        [ins.rows[0].id, body.student_id, batchId, sem, body.section || null]
+      );
+
+      const semCourses = await query(
+        "SELECT course_code FROM batch_courses WHERE batch_id=$1 AND semester_no=$2",
+        [batchId, sem]
+      );
+      for (const c of semCourses.rows) {
+        await query(
+          `INSERT INTO enrollments (student_user_id, course_code, semester_no, batch_id, status)
+           VALUES ($1,$2,$3,$4,'ENROLLED')
+           ON CONFLICT DO NOTHING`,
+          [ins.rows[0].id, c.course_code, sem, batchId]
+        );
+      }
+    }
+
     res.json({ user: ins.rows[0] });
   } catch (e) { next(e); }
 });
@@ -42,6 +193,56 @@ router.post("/users", async (req, res, next) => {
 router.delete("/users/:id", async (req,res,next)=> {
   try{
     await query("UPDATE users SET is_active=false WHERE id=$1", [req.params.id]);
+    res.json({ ok:true });
+  } catch(e){ next(e); }
+});
+
+/** Add course to batch semester */
+router.post("/batch-courses", async (req,res,next)=> {
+  try{
+    const schema = z.object({
+      batch_year: z.coerce.number().int(),
+      semester_no: z.coerce.number().int().min(1),
+      course_code: z.string().min(3)
+    });
+    const body = schema.parse(req.body);
+
+    const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [body.batch_year]);
+    const batchId = b.rows[0]?.id;
+    if (!batchId) return res.status(404).json({ message: "Batch not found" });
+
+    const course = await query(`SELECT code FROM courses WHERE code=$1`, [body.course_code]);
+    if (!course.rows[0]) return res.status(404).json({ message: "Course not found" });
+
+    const ins = await query(
+      `INSERT INTO batch_courses (batch_id, semester_no, course_code)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (batch_id, semester_no, course_code) DO NOTHING
+       RETURNING *`,
+      [batchId, body.semester_no, body.course_code]
+    );
+    res.json({ ok:true, batch_course: ins.rows[0] || null });
+  } catch(e){ next(e); }
+});
+
+/** Remove course from batch semester */
+router.delete("/batch-courses", async (req,res,next)=> {
+  try{
+    const schema = z.object({
+      batch_year: z.coerce.number().int(),
+      semester_no: z.coerce.number().int().min(1),
+      course_code: z.string().min(3)
+    });
+    const body = schema.parse(req.body);
+
+    const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [body.batch_year]);
+    const batchId = b.rows[0]?.id;
+    if (!batchId) return res.status(404).json({ message: "Batch not found" });
+
+    await query(
+      `DELETE FROM batch_courses WHERE batch_id=$1 AND semester_no=$2 AND course_code=$3`,
+      [batchId, body.semester_no, body.course_code]
+    );
     res.json({ ok:true });
   } catch(e){ next(e); }
 });
@@ -125,7 +326,7 @@ router.post("/semester/promote", async (req, res, next) => {
     const batchYear = Number(req.query.batchYear);
     const semesterNo = Number(req.query.semesterNo);
     const cgpaThreshold = req.query.cgpaThreshold ? Number(req.query.cgpaThreshold) : 2.0;
-    if (!batchYear || !semesterNo) return res.status(400).json({ message: "batchYear and semesterNo required" });
+    if (!batchYear || !semesterNo || semesterNo < 1) return res.status(400).json({ message: "batchYear and semesterNo required" });
 
     const b = await query("SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'", [batchYear]);
     const batchId = b.rows[0]?.id;
