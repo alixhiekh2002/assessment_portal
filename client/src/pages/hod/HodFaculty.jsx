@@ -47,6 +47,7 @@ export default function HodFaculty() {
       <Table size="small">
         <TableHead>
           <TableRow>
+            <TableCell>Faculty ID</TableCell>
             <TableCell>Name</TableCell>
             <TableCell>Email</TableCell>
             <TableCell>Department</TableCell>
@@ -57,6 +58,7 @@ export default function HodFaculty() {
           {faculty.map((f) => (
             <React.Fragment key={f.id}>
               <TableRow>
+                <TableCell>{f.id}</TableCell>
                 <TableCell>{f.name}</TableCell>
                 <TableCell>{f.email}</TableCell>
                 <TableCell>{f.department}</TableCell>
@@ -68,7 +70,7 @@ export default function HodFaculty() {
               </TableRow>
               {expandedId === f.id && (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
@@ -101,7 +103,7 @@ export default function HodFaculty() {
           ))}
           {faculty.length === 0 && (
             <TableRow>
-              <TableCell colSpan={4}>No faculty found.</TableCell>
+              <TableCell colSpan={5}>No faculty found.</TableCell>
             </TableRow>
           )}
         </TableBody>

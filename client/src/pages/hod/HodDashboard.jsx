@@ -34,9 +34,11 @@ export default function HodDashboard() {
 
   const stats = useMemo(() => {
     const unresolved = alerts.filter((a) => !a.is_resolved).length;
+    const resolved = alerts.filter((a) => a.is_resolved).length;
     return {
       totalAlerts: alerts.length,
       unresolved,
+      resolved,
       batches: batches.length
     };
   }, [alerts, batches]);
@@ -50,20 +52,24 @@ export default function HodDashboard() {
       </Paper>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
-        <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #eee" }}>
+        <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #f5c07a", backgroundColor: "#fff6e6" }}>
           <Typography variant="overline">Total Alerts</Typography>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>{stats.totalAlerts}</Typography>
         </Box>
-        <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #eee" }}>
+        <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #f3a6a6", backgroundColor: "#fff1f1" }}>
           <Typography variant="overline">Unresolved</Typography>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>{stats.unresolved}</Typography>
         </Box>
-        <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #eee" }}>
+        <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #9fd7b0", backgroundColor: "#eefaf1" }}>
+          <Typography variant="overline">Resolved Alerts</Typography>
+          <Typography variant="h4" sx={{ fontWeight: 700 }}>{stats.resolved}</Typography>
+        </Box>
+        <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #9ec5f0", backgroundColor: "#eef5ff" }}>
           <Typography variant="overline">Batches</Typography>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>{stats.batches}</Typography>
         </Box>
         <Box
-          sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #eee", cursor: "pointer" }}
+          sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #f1b08b", backgroundColor: "#fff3ea", cursor: "pointer" }}
           onClick={() => nav("/hod/faculty")}
         >
           <Typography variant="overline">Faculty ({department})</Typography>

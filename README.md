@@ -1,9 +1,6 @@
 # Assessment Portal (OBE) — React + Node/Express + PostgreSQL
 
-This is a **working starter project** for your Assessment Portal with 4 roles:
-- **ADMIN**
-- **HOD**
-- **FACULTY**
+This is a **working starter project** for your Assessment Portal
 - **STUDENT**
 
 It supports **proper OBE** (Option B):
@@ -27,8 +24,6 @@ It supports **proper OBE** (Option B):
 
 ---
 
-## Quick Start (Recommended: Docker Postgres)
-
 ### 1) Start PostgreSQL
 ```bash
 cd server
@@ -44,42 +39,14 @@ npm run db:migrate
 npm run db:seed
 npm run dev
 ```
-
-Backend runs at: `http://localhost:5000`
-
-### 3) Frontend setup
 ```bash
 cd client
 npm install
 npm run dev
 ```
 
-Frontend runs at: `http://localhost:5173`
-
----
-
-## Default Accounts (seeded)
-Password for all seeded users: **Pass@1234**
-
-- Admin: `admin@cs.edu`
-- HOD: `hod@cs.edu`
-- Faculty: `faculty@cs.edu`
-- Student: `student@cs.edu`
-
----
-
-## CSV Formats
-
-### A) Student Bulk Upload (Admin)
-Upload to: `POST /api/admin/students/bulk` (multipart/form-data `file`)
-```csv
-student_id,name,email,batch_year,section
-2026-CS-001,Ali Khan,ali001@uni.edu,2026,A
-2026-CS-002,Sara Shah,sara002@uni.edu,2026,A
 ```
 
-### B) Item Marks Upload (Faculty)
-Upload to: `POST /api/faculty/marks/upload-csv` (multipart/form-data `file`)
 ```csv
 student_id,course_code,batch_year,semester_no,component_type,item_no,obtained
 2026-CS-001,CMC111,2026,1,MID,1,8
@@ -99,8 +66,6 @@ student_id,course_code,batch_year,semester_no,component_type,item_no,obtained
 - D  (50–54)  1.00
 - F  (<50)    0.00
 
-Promotion endpoint expects a threshold (default 2.00):
-`POST /api/admin/semester/promote?batchYear=2026&semesterNo=1&cgpaThreshold=2.0`
 
 ---
 

@@ -1,11 +1,14 @@
 import React, { useState } from "react";
 import { api } from "../../services/api";
-import { Typography, Paper, TextField, Button, Alert, Stack } from "@mui/material";
+import { Typography, Paper, TextField, Button, Alert, Stack, InputAdornment, IconButton } from "@mui/material";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 
 export default function AdminHods() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [department, setDepartment] = useState("CS");
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -23,7 +26,7 @@ export default function AdminHods() {
       setMsg("HOD created successfully.");
       setName(""); setEmail(""); setPassword("");
     } catch (e) {
-      setErr(e?.response?.data?.message || "Failed");
+      setErr("PLease Fill the Correct Form");
     }
   };
 
@@ -37,7 +40,25 @@ export default function AdminHods() {
       <Stack spacing={2} sx={{ maxWidth: 520 }}>
         <TextField label="Name" value={name} onChange={(e)=>setName(e.target.value)} />
         <TextField label="Email" value={email} onChange={(e)=>setEmail(e.target.value)} />
-        <TextField label="Pass" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} />
+        <TextField
+          label="Pass"
+          type={showPassword ? "text" : "password"}
+          value={password}
+          onChange={(e)=>setPassword(e.target.value)}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            )
+          }}
+        />
         <TextField label="Department" value={department} onChange={(e)=>setDepartment(e.target.value)} />
         <Button variant="contained" onClick={submit}>Add HOD</Button>
       </Stack>

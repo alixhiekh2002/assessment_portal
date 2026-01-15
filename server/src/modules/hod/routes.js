@@ -145,6 +145,41 @@ router.get("/batches/:batchId/students/:studentId/results", async (req, res, nex
   } catch (e) { next(e); }
 });
 
+router.get("/batch-courses", async (req, res, next) => {
+  try {
+    const batchYear = Number(req.query.batchYear);
+    const semesterNo = Number(req.query.semesterNo);
+    if (!batchYear || !semesterNo || semesterNo < 1) {
+      return res.status(400).json({ message: "batchYear & semesterNo required" });
+    }
+
+    const b = await query(`SELECT id FROM batches WHERE batch_year=$1 AND program='BSCS'`, [batchYear]);
+    const batchId = b.rows[0]?.id;
+    if (!batchId) return res.status(404).json({ message: "Batch not found" });
+
+    const { rows } = await query(
+      `SELECT c.code, c.title
+       FROM batch_courses bc
+       JOIN courses c ON c.code = bc.course_code
+       WHERE bc.batch_id=$1 AND bc.semester_no=$2
+       ORDER BY c.code`,
+      [batchId, semesterNo]
+    );
+    if (rows.length > 0) {
+      return res.json({ courses: rows });
+    }
+
+    const fallback = await query(
+      `SELECT code, title
+       FROM courses
+       WHERE semester_no=$1
+       ORDER BY code`,
+      [semesterNo]
+    );
+    res.json({ courses: fallback.rows });
+  } catch (e) { next(e); }
+});
+
 router.post("/assign-course", async (req, res, next) => {
   try {
     const schema = z.object({

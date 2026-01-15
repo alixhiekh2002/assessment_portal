@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../services/api";
-import { Typography, Paper, Alert, Stack, Box, Chip } from "@mui/material";
+import { Typography, Paper, Alert, Stack, Box, Chip, Button } from "@mui/material";
 
 export default function StudentDashboard() {
   const [semesterNo, setSemesterNo] = useState(1);
@@ -36,9 +36,12 @@ export default function StudentDashboard() {
 
   return (
     <Paper sx={{ p: 3 }}>
-        <Typography variant="h4" sx={{ mb: 1, fontWeight: 700 }}>
-          Student Dashboard
-        </Typography>
+        <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 1 }}>
+          <Typography variant="h4" sx={{ fontWeight: 700 }}>
+            Student Dashboard
+          </Typography>
+          <Button variant="outlined">Change Password</Button>
+        </Stack>
         <Typography variant="body2" sx={{ mb: 2 }}>
           Course performance overview (Sem {semesterNo})
         </Typography>

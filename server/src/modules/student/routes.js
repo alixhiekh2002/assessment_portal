@@ -54,13 +54,70 @@ router.get("/results/semester", async (req,res,next)=> {
   } catch(e){ next(e); }
 });
 
+router.get("/results/semester-ga", async (req,res,next)=> {
+  try{
+    const semesterNo = Number(req.query.semesterNo);
+    if(!semesterNo || semesterNo < 1) return res.status(400).json({ message:"semesterNo required" });
+
+    const { rows } = await query(`
+      SELECT ga_code, ROUND(AVG(percentage)::numeric, 2) AS percentage
+      FROM ga_attainment
+      WHERE student_user_id=$1 AND semester_no=$2
+      GROUP BY ga_code
+      ORDER BY ga_code
+    `, [req.user.userId, semesterNo]);
+
+    res.json({ ga: rows });
+  } catch(e){ next(e); }
+});
+
+router.get("/results/yearly-ga", async (req,res,next)=> {
+  try{
+    const semesterNo = Number(req.query.semesterNo);
+    if(!semesterNo || semesterNo < 1) return res.status(400).json({ message:"semesterNo required" });
+
+    const semestersRes = await query(`
+      SELECT DISTINCT semester_no
+      FROM enrollments
+      WHERE student_user_id=$1
+    `, [req.user.userId]);
+    const semesters = semestersRes.rows.map(r => r.semester_no);
+
+    let yearStart = semesterNo % 2 === 0 ? semesterNo - 1 : semesterNo;
+    if (semesters.includes(semesterNo - 1) && semesters.includes(semesterNo - 2)) {
+      yearStart = semesterNo - 2;
+    }
+
+    const baseSemesters = [yearStart, yearStart + 1];
+    const availableBase = baseSemesters.filter((s) => semesters.includes(s));
+    if (availableBase.length < 2) {
+      return res.json({ ga: [], semesters: availableBase, message: "Year not completed." });
+    }
+
+    const yearSemesters = [...availableBase];
+    if (semesters.includes(yearStart + 2)) {
+      yearSemesters.push(yearStart + 2);
+    }
+
+    const { rows } = await query(`
+      SELECT ga_code, ROUND(AVG(percentage)::numeric, 2) AS percentage
+      FROM ga_attainment
+      WHERE student_user_id=$1 AND semester_no = ANY($2::int[])
+      GROUP BY ga_code
+      ORDER BY ga_code
+    `, [req.user.userId, yearSemesters]);
+
+    res.json({ ga: rows, semesters: yearSemesters });
+  } catch(e){ next(e); }
+});
+
 router.get("/results", async (req,res,next)=> {
   try{
     const courseCode = String(req.query.courseCode || "");
     if(!courseCode) return res.status(400).json({ message:"courseCode required" });
 
     const ga = await query(`
-      SELECT ga_code, percentage
+      SELECT semester_no, ga_code, percentage
       FROM ga_attainment
       WHERE student_user_id=$1 AND course_code=$2
       ORDER BY semester_no DESC, ga_code

@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { api } from "../../services/api";
-import { Paper, Typography, Button, Alert, TextField, Stack } from "@mui/material";
+import { Paper, Typography, Button, Alert, TextField, Stack, InputAdornment, IconButton } from "@mui/material";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 
 export default function AdminStudents() {
   const [msg, setMsg] = useState("");
@@ -8,6 +10,7 @@ export default function AdminStudents() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [studentId, setStudentId] = useState("");
   const [batchYear, setBatchYear] = useState(2026);
   const [section, setSection] = useState("A");
@@ -41,7 +44,7 @@ export default function AdminStudents() {
       setMsg("Student created successfully.");
       setName(""); setEmail(""); setPassword(""); setStudentId("");
     } catch (e) {
-      setErr(e?.response?.data?.message || "Failed");
+      setErr("PLease Fill the Correct Form");
     }
   };
 
@@ -58,7 +61,25 @@ export default function AdminStudents() {
       <Stack spacing={2} sx={{ maxWidth: 520, mb: 3 }}>
         <TextField label="Name" value={name} onChange={(e)=>setName(e.target.value)} />
         <TextField label="Email" value={email} onChange={(e)=>setEmail(e.target.value)} />
-        <TextField label="Pass" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} />
+        <TextField
+          label="Pass"
+          type={showPassword ? "text" : "password"}
+          value={password}
+          onChange={(e)=>setPassword(e.target.value)}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  edge="end"
+                >
+                  {showPassword ? <VisibilityOff /> : <Visibility />}
+                </IconButton>
+              </InputAdornment>
+            )
+          }}
+        />
         <TextField label="Student ID" value={studentId} onChange={(e)=>setStudentId(e.target.value)} />
         <TextField label="Batch Year" type="number" value={batchYear} onChange={(e)=>setBatchYear(e.target.value)} />
         <TextField label="Section" value={section} onChange={(e)=>setSection(e.target.value)} />
@@ -67,7 +88,7 @@ export default function AdminStudents() {
 
       <Typography variant="subtitle2" sx={{ mb: 1 }}>Bulk Upload</Typography>
       <Typography variant="body2" sx={{ mb: 2 }}>
-        CSV columns: student_id,name,email,batch_year,section
+        CSV columns: student_id,name,email,batch_year,section,password
       </Typography>
       <Button variant="contained" component="label">
         Upload CSV
