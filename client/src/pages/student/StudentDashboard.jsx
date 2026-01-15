@@ -1,11 +1,25 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../services/api";
-import { Typography, Paper, Alert, Stack, Box, Chip, Button } from "@mui/material";
+import {
+  Typography, Paper, Alert, Stack, Box, Chip, Button,
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  TextField, InputAdornment, IconButton
+} from "@mui/material";
+import Visibility from "@mui/icons-material/Visibility";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
 
 export default function StudentDashboard() {
   const [semesterNo, setSemesterNo] = useState(1);
   const [results, setResults] = useState([]);
   const [err, setErr] = useState("");
+  const [msg, setMsg] = useState("");
+  const [pwdOpen, setPwdOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -34,18 +48,50 @@ export default function StudentDashboard() {
     };
   }, [results]);
 
+  const resetPasswordForm = () => {
+    setCurrentPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    setShowCurrent(false);
+    setShowNew(false);
+    setShowConfirm(false);
+  };
+
+  const submitPassword = async () => {
+    setErr(""); setMsg("");
+    if (!currentPassword || !newPassword) {
+      setErr("Please fill all password fields");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErr("New password and confirm password do not match");
+      return;
+    }
+    try {
+      await api.patch("/student/password", { currentPassword, newPassword });
+      setMsg("Password updated successfully");
+      setPwdOpen(false);
+      resetPasswordForm();
+    } catch (e) {
+      setErr(e?.response?.data?.message || "Failed to update password");
+    }
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
         <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between", mb: 1 }}>
           <Typography variant="h4" sx={{ fontWeight: 700 }}>
             Student Dashboard
           </Typography>
-          <Button variant="outlined">Change Password</Button>
+          <Button variant="outlined" onClick={() => { setErr(""); setMsg(""); setPwdOpen(true); }}>
+            Change Password
+          </Button>
         </Stack>
         <Typography variant="body2" sx={{ mb: 2 }}>
           Course performance overview (Sem {semesterNo})
         </Typography>
         {err && <Alert severity="error" sx={{ mb: 2 }}>{err}</Alert>}
+        {msg && <Alert severity="success" sx={{ mb: 2 }}>{msg}</Alert>}
 
         <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 3 }}>
           <Box sx={{ flex: 1, p: 2, borderRadius: 1, border: "1px solid #eee" }}>
@@ -112,6 +158,75 @@ export default function StudentDashboard() {
             <Typography variant="body2">No results available yet.</Typography>
           )}
         </Stack>
+
+        <Dialog open={pwdOpen} onClose={() => { setPwdOpen(false); resetPasswordForm(); }}>
+          <DialogTitle>Change Password</DialogTitle>
+          <DialogContent>
+            <Stack spacing={2} sx={{ mt: 1, minWidth: 320 }}>
+              <TextField
+                label="Current Password"
+                type={showCurrent ? "text" : "password"}
+                value={currentPassword}
+                onChange={(e)=>setCurrentPassword(e.target.value)}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label={showCurrent ? "Hide password" : "Show password"}
+                        onClick={() => setShowCurrent((prev) => !prev)}
+                        edge="end"
+                      >
+                        {showCurrent ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }}
+              />
+              <TextField
+                label="New Password"
+                type={showNew ? "text" : "password"}
+                value={newPassword}
+                onChange={(e)=>setNewPassword(e.target.value)}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label={showNew ? "Hide password" : "Show password"}
+                        onClick={() => setShowNew((prev) => !prev)}
+                        edge="end"
+                      >
+                        {showNew ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }}
+              />
+              <TextField
+                label="Confirm New Password"
+                type={showConfirm ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e)=>setConfirmPassword(e.target.value)}
+                InputProps={{
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label={showConfirm ? "Hide password" : "Show password"}
+                        onClick={() => setShowConfirm((prev) => !prev)}
+                        edge="end"
+                      >
+                        {showConfirm ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  )
+                }}
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => { setPwdOpen(false); resetPasswordForm(); }}>Cancel</Button>
+            <Button variant="contained" onClick={submitPassword}>Update Password</Button>
+          </DialogActions>
+        </Dialog>
     </Paper>
   );
 }

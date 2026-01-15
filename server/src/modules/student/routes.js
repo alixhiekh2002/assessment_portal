@@ -1,4 +1,5 @@
 import { Router } from "express";
+import bcrypt from "bcrypt";
 import { auth } from "../../middleware/auth.js";
 import { requireRole } from "../../middleware/roles.js";
 import { query } from "../../db.js";
@@ -139,6 +140,29 @@ router.get("/results", async (req,res,next)=> {
     `, [req.user.userId, courseCode]);
 
     res.json({ ga: ga.rows, clo: clo.rows, grade: grade.rows });
+  } catch(e){ next(e); }
+});
+
+router.patch("/password", async (req,res,next)=> {
+  try{
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "currentPassword and newPassword required" });
+    }
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
+    const userRes = await query(`SELECT password_hash FROM users WHERE id=$1`, [req.user.userId]);
+    const hash = userRes.rows[0]?.password_hash;
+    if (!hash) return res.status(404).json({ message: "User not found" });
+
+    const ok = await bcrypt.compare(String(currentPassword), hash);
+    if (!ok) return res.status(400).json({ message: "Current password is incorrect" });
+
+    const newHash = await bcrypt.hash(String(newPassword), 10);
+    await query(`UPDATE users SET password_hash=$1 WHERE id=$2`, [newHash, req.user.userId]);
+    res.json({ ok: true });
   } catch(e){ next(e); }
 });
 
